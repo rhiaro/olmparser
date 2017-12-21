@@ -2,6 +2,8 @@ import sys
 import zipfile
 from lxml import etree
 from datetime import datetime
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 
 def dump_tags(tree):
@@ -46,7 +48,7 @@ def get_body(email):
         # There might be no body if it's a calender reply or something.
         # Calendar replies still have subject lines and addressees and stuff
         # though so probably worth keeping.
-        body = body.strip()
+        body = body.strip().encode('utf-8')
 
     return {mime_type: body}
 
@@ -101,7 +103,8 @@ def get_contacts(addresses):
     if addresses is not None:
         for address in addresses.findall('.//emailAddress'):
             email = address.get('OPFContactEmailAddressAddress')
-            emails.append(email)
+            if email is not None:
+                emails.append(email)
             name = address.get('OPFContactEmailAddressName')
             if name is not None and name != email:
                 names.append(name)
@@ -122,11 +125,7 @@ def parse_message(zip, name):
         'Date': None,
     }
     body = None
-    attachments = [{
-        'file_name': None,
-        'mime_type': None,
-        'file_handle': None
-    }]
+    attachments = []
     names = []
     emails = []
     title = None
@@ -178,6 +177,27 @@ def parse_message(zip, name):
         }
 
 
+def make_email(headers, body, attachments):
+    msg = MIMEMultipart()
+    for header in headers.keys():
+        if isinstance(headers[header], str):
+            msg[header] = headers[header]
+        elif isinstance(headers[header], list):
+            msg[header] = ', '.join(headers[header])
+
+    if body is not None:
+        if 'text/html' in body.keys():
+            email = MIMEText(body['text/html'], 'html')
+        elif 'text/plain' in body.keys():
+            email = MIMEText(body['text/plain'], 'plain')
+        msg.attach(email)
+    if attachments is not []:
+        # TODO
+        pass
+
+    return msg
+
+
 def main():
     fn = sys.argv[1]
 
@@ -189,6 +209,10 @@ def main():
             continue
 
         parsed = parse_message(zf, info)
+        email = make_email(parsed['headers'], parsed[
+                           'body'], parsed['attachments'])
+
+        print email.as_string()
 
 
 if __name__ == '__main__':
